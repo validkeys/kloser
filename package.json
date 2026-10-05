@@ -1,0 +1,131 @@
+{
+  "name": "kloser",
+  "displayName": "Kloser",
+  "description": "Give a Claude Code agent control of a selected block of code, running in the background with live gutter indicators.",
+  "version": "0.3.0",
+  "publisher": "kydavis",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "kloser.completeSelection",
+        "title": "Kloser: Complete Selection with Agent"
+      },
+      {
+        "command": "kloser.codeReview",
+        "title": "Kloser: Code Review Selection"
+      },
+      {
+        "command": "kloser.stopAllRequests",
+        "title": "Kloser: Stop All Requests"
+      },
+      {
+        "command": "kloser.showLogs",
+        "title": "Kloser: Show Logs"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "kloser.completeSelection",
+        "key": "ctrl+shift+9",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "kloser.codeReview",
+        "key": "ctrl+shift+8",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "kloser.codeReview",
+          "when": "editorHasSelection",
+          "group": "9_kloser@0"
+        },
+        {
+          "command": "kloser.completeSelection",
+          "when": "editorHasSelection",
+          "group": "9_kloser@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kloser",
+      "properties": {
+        "kloser.claudeExecutable": {
+          "type": "string",
+          "default": "claude",
+          "markdownDescription": "Path or name of the Claude Code CLI executable. Set an absolute path if VS Code cannot find `claude` on PATH (common when launching VS Code from the Dock)."
+        },
+        "kloser.model": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model override passed to `claude` via `--model` (e.g. a Bedrock model ID such as `us.anthropic.claude-sonnet-4-6`). Leave empty to use your Claude Code default."
+        },
+        "kloser.contextLines": {
+          "type": "number",
+          "default": 60,
+          "markdownDescription": "Number of context lines above and below the selection that are included in the prompt."
+        },
+        "kloser.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Additional CLI arguments passed to every `claude` invocation."
+        },
+        "kloser.env": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Environment variables merged into the claude child process environment (e.g. `AWS_PROFILE`, `AWS_REGION`)."
+        },
+        "kloser.bedrock.useBedrock": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Set `CLAUDE_CODE_USE_BEDROCK=1` for spawned claude processes. Only needed if your shell environment does not already set it."
+        },
+        "kloser.bedrock.model": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Sets `ANTHROPIC_MODEL` for the claude process (e.g. `us.anthropic.claude-sonnet-4-6`)."
+        },
+        "kloser.bedrock.smallFastModel": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Sets `ANTHROPIC_SMALL_FAST_MODEL` for the claude process (e.g. `us.anthropic.claude-haiku-4-5-20251001-v1:0`)."
+        },
+        "kloser.bedrock.baseUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Sets `ANTHROPIC_BEDROCK_BASE_URL` for the claude process (used for Bedrock proxies/gateways)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "check-types": "tsc --noEmit",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "npm run check-types && node esbuild.js --production"
+  },
+  "dependencies": {
+    "marked": "^14.1.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.5.0"
+  }
+}
