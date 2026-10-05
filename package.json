@@ -2,7 +2,7 @@
   "name": "kloser",
   "displayName": "Kloser",
   "description": "Give a Claude Code agent control of a selected block of code, running in the background with live gutter indicators.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "kydavis",
   "engines": {
     "vscode": "^1.85.0"
@@ -18,6 +18,14 @@
       {
         "command": "kloser.completeSelection",
         "title": "Kloser: Complete Selection with Agent"
+      },
+      {
+        "command": "kloser.acceptStream",
+        "title": "Kloser: Accept Stream (Tab)"
+      },
+      {
+        "command": "kloser.rejectStream",
+        "title": "Kloser: Reject Stream (Esc)"
       },
       {
         "command": "kloser.codeReview",
@@ -42,6 +50,16 @@
         "command": "kloser.codeReview",
         "key": "ctrl+shift+8",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "kloser.acceptStream",
+        "key": "tab",
+        "when": "kloser.streamActive && editorTextFocus && !suggestWidgetVisible"
+      },
+      {
+        "command": "kloser.rejectStream",
+        "key": "escape",
+        "when": "kloser.streamActive && editorTextFocus && !suggestWidgetVisible && !findWidgetVisible"
       }
     ],
     "menus": {

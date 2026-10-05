@@ -11,14 +11,21 @@ Inspired by the `visual()` workflow of [ThePrimeagen/99](https://github.com/TheP
 1. Select one or more lines (an empty selection uses the current line).
 2. Run **Kloser: Complete Selection with Agent** (`Ctrl+Shift+9`, or the editor
    context menu).
-3. Type an instruction and press `Enter`. The prompt box disappears and the request
-   runs in the background — you are free to click away and keep coding.
-4. An animated gutter spinner + subtle highlight mark the active block. Multiple
-   blocks can be in flight at the same time.
-5. On completion the block is replaced with the agent's code (a normal edit —
-   `Cmd+Z` / `Ctrl+Z` undoes it). A green gutter marker lingers briefly.
-   On failure a red marker appears and an error message is shown.
-6. The status bar shows the number of active requests; click it to stop them all.
+3. Type an instruction and press `Enter`. The replacement **streams directly
+   into the editor** as the agent writes it — watch it materialize line by line
+   (indigo tint + gutter spinner mark the live block).
+4. Steer it, keyboard-first:
+   - **Tab** — accept what has streamed so far (kills generation, keeps the text)
+   - **Esc** — reject: revert the block to its original text
+   - **Ctrl+Shift+9** — redirect mid-stream: type a correction ("no — reuse the
+     existing config helper") and the agent rewrites from the same session
+5. After the stream finishes the block stays in a *pending* state (yellow
+   marker) until you **Tab** to accept or **Esc** to reject.
+6. The whole stream is a single undo step (`Cmd+Z` after accepting reverts the
+   agent's entire edit).
+
+Only one completion stream is active at a time; multiple code reviews can
+still run in parallel.
 
 ## Requirements
 

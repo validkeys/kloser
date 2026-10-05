@@ -18,7 +18,8 @@ export function stripCodeFences(raw: string): string {
   if (embeddedFence) {
     return embeddedFence[1].trimEnd();
   }
-  return text;
+  // accept-mid-stream: a fence may have opened but not yet closed
+  return text.replace(/^```[^\n]*\n/, "").trimEnd();
 }
 
 export function resolveRunCwd(document: TextDocument): string {

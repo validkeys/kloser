@@ -24,8 +24,20 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const completeSelection = vscode.commands.registerTextEditorCommand(
     "kloser.completeSelection",
-    (editor) => promptForInstruction(editor, requests),
+    (editor) => {
+      if (requests.hasActiveStream) {
+        promptForRedirect(requests);
+        return;
+      }
+      promptForInstruction(editor, requests);
+    },
   );
+  const acceptStream = vscode.commands.registerCommand("kloser.acceptStream", () => {
+    requests.accept();
+  });
+  const rejectStream = vscode.commands.registerCommand("kloser.rejectStream", () => {
+    requests.reject();
+  });
   const codeReview = vscode.commands.registerTextEditorCommand("kloser.codeReview", (editor) => {
     void reviews.start(editor, normalizeLineRange(editor));
   });
@@ -39,6 +51,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     completeSelection,
+    acceptStream,
+    rejectStream,
     codeReview,
     stopAllRequests,
     showLogs,
@@ -89,6 +103,25 @@ function promptForInstruction(editor: vscode.TextEditor, requests: RequestManage
       return;
     }
     requests.start(editor, range, instruction);
+  });
+  input.onDidHide(() => {
+    input.dispose();
+  });
+  input.show();
+}
+
+function promptForRedirect(requests: RequestManager): void {
+  const original = requests.activeInstruction ?? "";
+  const input = vscode.window.createInputBox();
+  input.title = `Kloser: redirect the agent${original ? ` — was: "${original.slice(0, 80)}"` : ""}`;
+  input.prompt = "Enter to redirect · Escape or click away to keep the current stream";
+  input.placeholder = "e.g. no — reuse the existing config helper…";
+  input.onDidAccept(() => {
+    input.hide();
+    const correction = input.value.trim();
+    if (correction) {
+      requests.redirect(correction);
+    }
   });
   input.onDidHide(() => {
     input.dispose();

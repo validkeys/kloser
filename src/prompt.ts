@@ -53,6 +53,16 @@ export function buildReviewPrompt(args: ReviewPromptArgs): string {
   return lines.join("\n");
 }
 
+export function buildRedirectPrompt(instruction: string, correction: string): string {
+  return [
+    "The user is interrupting the replacement code you are producing.",
+    `Original instruction: ${instruction}`,
+    `User correction: ${correction}`,
+    "",
+    "Start over and return ONLY the complete updated replacement code for the block from the beginning — no fences, no explanations — fully incorporating the correction.",
+  ].join("\n");
+}
+
 export function buildReplacementPrompt(args: PromptArgs): string {
   return [
     "You are Kloser, a code-completion agent embedded in the user's editor.",

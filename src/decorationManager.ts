@@ -2,7 +2,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { remapRange } from "./util";
 
-export type BlockStatus = "done" | "error" | "running";
+export type BlockStatus = "done" | "error" | "pending" | "running";
 
 interface TrackedBlock {
   id: string;
@@ -23,6 +23,7 @@ export class DecorationManager implements vscode.Disposable {
   private readonly doneType: vscode.TextEditorDecorationType;
   private readonly errorType: vscode.TextEditorDecorationType;
   private readonly frameTypes: vscode.TextEditorDecorationType[];
+  private readonly pendingType: vscode.TextEditorDecorationType;
   private spinnerTimer: NodeJS.Timeout | undefined;
 
   constructor(extensionPath: string) {
@@ -48,6 +49,12 @@ export class DecorationManager implements vscode.Disposable {
     this.errorType = vscode.window.createTextEditorDecorationType({
       backgroundColor: "rgba(239, 68, 68, 0.10)",
       gutterIconPath: mediaUri("error.svg"),
+      gutterIconSize: "contain",
+      isWholeLine: true,
+    });
+    this.pendingType = vscode.window.createTextEditorDecorationType({
+      backgroundColor: "rgba(234, 179, 8, 0.08)",
+      gutterIconPath: mediaUri("pending.svg"),
       gutterIconSize: "contain",
       isWholeLine: true,
     });
@@ -81,6 +88,16 @@ export class DecorationManager implements vscode.Disposable {
     return range;
   }
 
+  public setStatus(id: string, status: BlockStatus): void {
+    const block = this.blocks.get(id);
+    if (!block) {
+      return;
+    }
+    block.status = status;
+    this.syncSpinnerTimer();
+    this.render();
+  }
+
   public remove(id: string): void {
     if (this.blocks.delete(id)) {
       this.syncSpinnerTimer();
@@ -99,6 +116,7 @@ export class DecorationManager implements vscode.Disposable {
     }
     this.doneType.dispose();
     this.errorType.dispose();
+    this.pendingType.dispose();
   }
 
   private onDocumentChanged(event: vscode.TextDocumentChangeEvent): void {
@@ -139,6 +157,7 @@ export class DecorationManager implements vscode.Disposable {
       const uriKey = editor.document.uri.toString();
       const doneRanges: vscode.Range[] = [];
       const errorRanges: vscode.Range[] = [];
+      const pendingRanges: vscode.Range[] = [];
       const runningRanges: vscode.Range[] = [];
       for (const block of this.blocks.values()) {
         if (block.uri.toString() !== uriKey) {
@@ -148,6 +167,8 @@ export class DecorationManager implements vscode.Disposable {
           runningRanges.push(block.range);
         } else if (block.status === "done") {
           doneRanges.push(block.range);
+        } else if (block.status === "pending") {
+          pendingRanges.push(block.range);
         } else {
           errorRanges.push(block.range);
         }
@@ -157,6 +178,7 @@ export class DecorationManager implements vscode.Disposable {
       });
       editor.setDecorations(this.doneType, doneRanges);
       editor.setDecorations(this.errorType, errorRanges);
+      editor.setDecorations(this.pendingType, pendingRanges);
     }
   }
 }
