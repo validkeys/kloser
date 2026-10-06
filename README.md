@@ -90,6 +90,32 @@ first, then language rules), and both are injected into the review prompt with
 priority over the built-in defaults. If no guidelines exist, Kloser says so and
 uses its built-in review prompt.
 
+## PR guided tour
+
+Review an agent's PR the way you'd actually read it: whole solution first, then
+vertical slices, with your questions left as comments **in the code**.
+
+Run **Kloser: Review PR (Guided Tour)** (command palette). The flow:
+
+1. **Pick a PR** (current branch's PR is offered first). If you're not on the PR
+   branch, Kloser offers to check it out — the tour edits and annotates real files.
+2. **Plain-English overview** streams into the pane: what was done, why, the
+   approach, and the riskiest changes. The agent also proposes **3–7 vertical
+   slices** of the change (by concern, not by file).
+3. **Tour the slices**: each slice opens its key files in the editor with the
+   PR's added lines highlighted green; the pane explains what changed and what
+   to watch for. `Ctrl+Shift+7` or **Next slice ▸** advances.
+4. **View code your way**: files open as the current (head) state — press
+   `Ctrl+Shift+6` or **Toggle diff** to flip any file into a base-vs-head diff.
+5. **Annotate as you go**: leave `?` comments directly in the code
+   (`// ? why this null check?`, `# ? duplicated elsewhere?`).
+6. **Debrief**: hit **Review my ? comments** — Kloser sweeps every `?` comment
+   in the changed files and the agent answers each (grouped by file, in code
+   order), proposing concrete fixes where warranted.
+
+Mid-tour chat works too — questions resume the same Claude session that read
+the whole diff. `.kloser/code-review.md` guidelines shape the tour.
+
 ## Commands
 
 | Command | Title |

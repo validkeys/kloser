@@ -2,7 +2,7 @@
   "name": "kloser",
   "displayName": "Kloser",
   "description": "Give a Claude Code agent control of a selected block of code, running in the background with live gutter indicators.",
-  "version": "0.4.0",
+  "version": "0.6.4",
   "publisher": "kydavis",
   "engines": {
     "vscode": "^1.85.0"
@@ -38,6 +38,22 @@
       {
         "command": "kloser.showLogs",
         "title": "Kloser: Show Logs"
+      },
+      {
+        "command": "kloser.reviewComments",
+        "title": "Kloser: Review My ? Comments"
+      },
+      {
+        "command": "kloser.pr.review",
+        "title": "Kloser: Review PR (Guided Tour)"
+      },
+      {
+        "command": "kloser.pr.nextSlice",
+        "title": "Kloser: PR Tour — Next Slice"
+      },
+      {
+        "command": "kloser.pr.toggleDiff",
+        "title": "Kloser: PR Tour — Toggle Diff"
       }
     ],
     "keybindings": [
@@ -60,6 +76,21 @@
         "command": "kloser.rejectStream",
         "key": "escape",
         "when": "kloser.streamActive && editorTextFocus && !suggestWidgetVisible && !findWidgetVisible"
+      },
+      {
+        "command": "kloser.pr.nextSlice",
+        "key": "ctrl+shift+7",
+        "when": "kloser.prTourActive && editorTextFocus"
+      },
+      {
+        "command": "kloser.pr.toggleDiff",
+        "key": "ctrl+shift+6",
+        "when": "kloser.prTourActive && editorTextFocus"
+      },
+      {
+        "command": "kloser.reviewComments",
+        "key": "ctrl+shift+5",
+        "when": "editorTextFocus"
       }
     ],
     "menus": {

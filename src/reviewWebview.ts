@@ -4,9 +4,15 @@ import { marked } from "marked";
 import { isRecord } from "./util";
 
 export interface ReviewPaneCallbacks {
-  onApply: (code: string) => void;
+  onApply?: (code: string) => void;
+  onAction?: (action: string) => void;
   onDisposed: () => void;
   onFollowup: (text: string) => void;
+}
+
+export interface ReviewPaneOptions {
+  actions?: Array<{ id: string; label: string }>;
+  enableApply?: boolean;
 }
 
 const RENDER_THROTTLE_MS = 100;
@@ -14,14 +20,17 @@ const RENDER_THROTTLE_MS = 100;
 export class ReviewPane implements vscode.Disposable {
   private readonly panel: vscode.WebviewPanel;
   private readonly callbacks: ReviewPaneCallbacks;
+  private banner = "";
   private committed = "";
   private currentAssistant = "";
   private disposed = false;
+  private readonly enableApply: boolean;
   private renderTimer: NodeJS.Timeout | undefined;
   private running = false;
 
-  constructor(title: string, callbacks: ReviewPaneCallbacks) {
+  constructor(title: string, callbacks: ReviewPaneCallbacks, options?: ReviewPaneOptions) {
     this.callbacks = callbacks;
+    this.enableApply = options?.enableApply !== false;
     this.panel = vscode.window.createWebviewPanel(
       "kloser.codeReview",
       title,
@@ -29,7 +38,7 @@ export class ReviewPane implements vscode.Disposable {
       { enableScripts: true, retainContextWhenHidden: true },
     );
     const nonce = randomBytes(16).toString("hex");
-    this.panel.webview.html = buildShellHtml(nonce);
+    this.panel.webview.html = buildShellHtml(nonce, options?.actions ?? []);
     this.panel.webview.onDidReceiveMessage((message: unknown) => {
       this.handleMessage(message);
     });
@@ -37,6 +46,18 @@ export class ReviewPane implements vscode.Disposable {
       this.disposed = true;
       this.callbacks.onDisposed();
     });
+  }
+
+  public setBanner(banner: string): void {
+    this.banner = banner;
+    this.render();
+  }
+
+  public note(text: string): void {
+    this.commitAssistantTurn();
+    this.currentAssistant = text;
+    this.commitAssistantTurn();
+    this.render();
   }
 
   public beginAssistantTurn(): void {
@@ -97,7 +118,11 @@ export class ReviewPane implements vscode.Disposable {
       return;
     }
     if (message.type === "apply" && typeof message.code === "string") {
-      this.callbacks.onApply(message.code);
+      this.callbacks.onApply?.(message.code);
+      return;
+    }
+    if (message.type === "action" && typeof message.action === "string") {
+      this.callbacks.onAction?.(message.action);
     }
   }
 
@@ -128,8 +153,14 @@ export class ReviewPane implements vscode.Disposable {
     if (this.disposed) {
       return;
     }
-    const html = injectApplyButtons(renderMarkdown(this.buildMarkdown()));
-    void this.panel.webview.postMessage({ html, running: this.running, type: "render" });
+    const body = renderMarkdown(this.buildMarkdown());
+    const html = this.enableApply ? injectApplyButtons(body) : body;
+    void this.panel.webview.postMessage({
+      banner: this.banner,
+      html,
+      running: this.running,
+      type: "render",
+    });
   }
 
   private setRunning(running: boolean): void {
@@ -168,13 +199,19 @@ function injectApplyButtons(html: string): string {
   return withButtons.replace(/<\/pre>/g, "</pre></div>");
 }
 
-function buildShellHtml(nonce: string): string {
+function buildShellHtml(nonce: string, actions: Array<{ id: string; label: string }>): string {
   const csp = [
     "default-src 'none'",
     `script-src 'nonce-${nonce}'`,
     "style-src 'unsafe-inline'",
     "img-src https: data:",
   ].join("; ");
+  const actionButtons = actions
+    .map(
+      (action) =>
+        `<button class="kloser-action" type="button" data-action="${action.id}">${action.label}</button>`,
+    )
+    .join("");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -204,6 +241,10 @@ function buildShellHtml(nonce: string): string {
   .kloser-apply { background: var(--vscode-button-secondary-background); color: var(--vscode-button-secondary-foreground); border: none; border-radius: 3px; padding: 2px 10px; font-size: 0.85em; font-family: inherit; cursor: pointer; }
   .kloser-apply:hover { background: var(--vscode-button-secondary-hoverBackground, var(--vscode-button-secondary-background)); }
   #kloser-typing { display: none; padding: 2px 16px 6px; color: var(--vscode-descriptionForeground); font-style: italic; }
+  #kloser-banner { display: none; padding: 6px 16px; background: var(--vscode-editorInlayHint-background, rgba(128,128,128,0.1)); border-bottom: 1px solid var(--vscode-panel-border); font-weight: 600; }
+  #kloser-actions { display: flex; gap: 8px; padding: 6px 16px; border-top: 1px solid var(--vscode-panel-border); }
+  .kloser-action { background: var(--vscode-button-secondary-background); color: var(--vscode-button-secondary-foreground); border: none; border-radius: 3px; padding: 4px 12px; font-family: inherit; font-size: 0.9em; cursor: pointer; }
+  .kloser-action:hover { filter: brightness(1.1); }
   #kloser-footer { border-top: 1px solid var(--vscode-panel-border); padding: 8px 12px; display: flex; gap: 8px; align-items: flex-start; background: var(--vscode-editor-background); }
   #kloser-input { flex: 1; resize: vertical; min-height: 2.2em; max-height: 10em; font-family: inherit; font-size: 1em; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); border-radius: 2px; padding: 4px 6px; }
   #kloser-send { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 2px; padding: 6px 14px; font-family: inherit; font-size: 1em; cursor: pointer; }
@@ -212,10 +253,12 @@ function buildShellHtml(nonce: string): string {
 </style>
 </head>
 <body>
+<div id="kloser-banner"></div>
 <div id="content"><p><em>Starting review…</em></p></div>
 <div id="kloser-typing">Kloser is responding…</div>
+${actionButtons ? `<div id="kloser-actions">${actionButtons}</div>` : ""}
 <div id="kloser-footer">
-  <textarea id="kloser-input" placeholder="Ask for solutions, refinements, or say \\"implement the fixes\\"…" rows="1"></textarea>
+  <textarea id="kloser-input" placeholder="Ask a question about this review…" rows="1"></textarea>
   <button id="kloser-send" type="button">Send</button>
 </div>
 <script nonce="${nonce}">
@@ -241,9 +284,14 @@ function buildShellHtml(nonce: string): string {
     document.addEventListener("click", function (event) {
       var target = event.target;
       if (!(target instanceof Element)) { return; }
-      var button = target.closest(".kloser-apply");
-      if (!button) { return; }
-      var holder = button.closest(".kloser-block");
+      var actionButton = target.closest(".kloser-action");
+      if (actionButton) {
+        api.postMessage({ type: "action", action: actionButton.getAttribute("data-action") });
+        return;
+      }
+      var applyButton = target.closest(".kloser-apply");
+      if (!applyButton) { return; }
+      var holder = applyButton.closest(".kloser-block");
       var code = holder ? holder.querySelector("pre code") : null;
       if (code) { api.postMessage({ type: "apply", code: code.innerText }); }
     });
@@ -252,6 +300,13 @@ function buildShellHtml(nonce: string): string {
       if (!message || message.type !== "render") { return; }
       var doc = document.documentElement;
       var nearBottom = window.innerHeight + window.scrollY >= doc.scrollHeight - 48;
+      var banner = document.getElementById("kloser-banner");
+      if (typeof message.banner === "string" && message.banner) {
+        banner.textContent = message.banner;
+        banner.style.display = "block";
+      } else {
+        banner.style.display = "none";
+      }
       content.innerHTML = message.html;
       var busy = !!message.running;
       input.disabled = busy;

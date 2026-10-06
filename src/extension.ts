@@ -1,7 +1,10 @@
 import * as vscode from "vscode";
+import { CommentReviewManager } from "./commentReviewManager";
 import { DecorationManager } from "./decorationManager";
 import { RequestManager } from "./requestManager";
 import { ReviewManager } from "./reviewManager";
+import { PrBaseContentProvider, PR_BASE_SCHEME } from "./pr/baseContentProvider";
+import { PrTourManager } from "./pr/prTourManager";
 
 export function activate(context: vscode.ExtensionContext): void {
   const log = vscode.window.createOutputChannel("Kloser");
@@ -17,10 +20,27 @@ export function activate(context: vscode.ExtensionContext): void {
     log,
     onActiveCountChanged: () => refreshStatus(),
   });
+  const prTours = new PrTourManager({
+    log,
+    onActiveCountChanged: () => refreshStatus(),
+  });
+  const commentReviews = new CommentReviewManager({
+    log,
+    onActiveCountChanged: () => refreshStatus(),
+  });
 
   function refreshStatus(): void {
-    updateStatusItem(statusItem, requests.activeCount + reviews.activeCount);
+    updateStatusItem(
+      statusItem,
+      requests.activeCount + reviews.activeCount + prTours.activeCount + commentReviews.activeCount,
+    );
   }
+
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const prBaseProvider = vscode.workspace.registerTextDocumentContentProvider(
+    PR_BASE_SCHEME,
+    new PrBaseContentProvider(workspaceRoot ?? ""),
+  );
 
   const completeSelection = vscode.commands.registerTextEditorCommand(
     "kloser.completeSelection",
@@ -44,6 +64,20 @@ export function activate(context: vscode.ExtensionContext): void {
   const stopAllRequests = vscode.commands.registerCommand("kloser.stopAllRequests", () => {
     requests.stopAll();
     reviews.stopAll();
+    prTours.stopAll();
+    commentReviews.stopAll();
+  });
+  const reviewComments = vscode.commands.registerCommand("kloser.reviewComments", () => {
+    void commentReviews.review();
+  });
+  const prReview = vscode.commands.registerCommand("kloser.pr.review", () => {
+    void prTours.start();
+  });
+  const prNextSlice = vscode.commands.registerCommand("kloser.pr.nextSlice", () => {
+    prTours.nextSlice();
+  });
+  const prToggleDiff = vscode.commands.registerCommand("kloser.pr.toggleDiff", () => {
+    void prTours.toggleDiff();
   });
   const showLogs = vscode.commands.registerCommand("kloser.showLogs", () => {
     log.show();
@@ -56,6 +90,13 @@ export function activate(context: vscode.ExtensionContext): void {
     codeReview,
     stopAllRequests,
     showLogs,
+    reviewComments,
+    prReview,
+    prNextSlice,
+    prToggleDiff,
+    prBaseProvider,
+    prTours,
+    commentReviews,
     statusItem,
     decorations,
     requests,

@@ -45,6 +45,13 @@ Legend: ✅ shipped · 🚧 in progress · 💡 idea
 
 ## Working across blocks like a conversation
 
+- ✅ **PR guided tour** — plain-English overview, then vertical slices with
+  in-code `?` comments, toggleable diffs, and an agent debrief of your
+  annotations. (v0.5.0)
+- 💡 **GitHub posting** — convert the debrief into a submitted `gh pr review`
+  (approve / request changes) with your comments.
+- ✅ **Debrief apply** — debrief fix proposals carry a `kloser-apply:` target
+  (file + line range) and land via per-block Apply buttons. (v0.5.4)
 - ✅ **Multiple pinned blocks** — several completions/reviews can run at once today;
   a queue/triage view would make this first-class. (partial)
 - 💡 **Plan-first mode** — agent proposes a numbered plan; you approve steps
