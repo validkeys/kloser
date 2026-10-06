@@ -98,7 +98,14 @@ export class ReviewPane implements vscode.Disposable {
   }
 
   public dispose(): void {
-    this.panel.dispose();
+    if (this.renderTimer) {
+      clearTimeout(this.renderTimer);
+      this.renderTimer = undefined;
+    }
+    if (!this.disposed) {
+      this.disposed = true;
+      this.panel.dispose();
+    }
   }
 
   private commitAssistantTurn(): void {

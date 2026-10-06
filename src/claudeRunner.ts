@@ -49,16 +49,61 @@ interface StreamEnvelope {
   type?: string;
 }
 
+/**
+ * Type guard to validate StreamEnvelope structure.
+ * Ensures parsed JSON conforms to expected stream format.
+ */
+function isStreamEnvelope(value: unknown): value is StreamEnvelope {
+  if (!isRecord(value)) return false;
+  
+  const record = value as Record<string, unknown>;
+  
+  // Optional type field must be string
+  if ("type" in record && typeof record.type !== "string") return false;
+  
+  // Optional is_error must be boolean
+  if ("is_error" in record && typeof record.is_error !== "boolean") return false;
+  
+  // Optional session_id must be string
+  if ("session_id" in record && typeof record.session_id !== "string") return false;
+  
+  // Optional event must be object
+  if ("event" in record) {
+    if (!isRecord(record.event)) return false;
+    const event = record.event as Record<string, unknown>;
+    
+    // event.type must be string if present
+    if ("type" in event && typeof event.type !== "string") return false;
+    
+    // event.delta must be object if present
+    if ("delta" in event) {
+      if (!isRecord(event.delta)) return false;
+      const delta = event.delta as Record<string, unknown>;
+      
+      // delta.type must be string if present
+      if ("type" in delta && typeof delta.type !== "string") return false;
+      
+      // delta.text must be string if present
+      if ("text" in delta && typeof delta.text !== "string") return false;
+    }
+  }
+  
+  return true;
+}
+
 function parseStreamLine(line: string): StreamEnvelope | undefined {
   try {
     const parsed: unknown = JSON.parse(line);
-    if (isRecord(parsed)) {
-      return parsed as StreamEnvelope;
+    if (!isStreamEnvelope(parsed)) {
+      // Malformed stream data - log but continue
+      // (Claude may send debug messages that aren't envelopes)
+      return undefined;
     }
+    return parsed;
   } catch {
+    // JSON parse error - not a valid envelope
     return undefined;
   }
-  return undefined;
 }
 
 export function runClaude(options: ClaudeRunOptions): ClaudeRunHandle {
@@ -82,6 +127,7 @@ export function runClaude(options: ClaudeRunOptions): ClaudeRunHandle {
   let finalResult: string | undefined;
   let resultError = false;
   let streamedText = "";
+  let killTimeout: NodeJS.Timeout | undefined;
 
   let resolveSessionId: (sessionId: string | undefined) => void = () => {};
   const sessionId = new Promise<string | undefined>((resolve) => {
@@ -136,6 +182,10 @@ export function runClaude(options: ClaudeRunOptions): ClaudeRunHandle {
     }
 
     child.on("error", (error: NodeJS.ErrnoException) => {
+      if (killTimeout) {
+        clearTimeout(killTimeout);
+        killTimeout = undefined;
+      }
       resolveSessionId(undefined);
       reject(
         new ClaudeRunError(
@@ -148,6 +198,10 @@ export function runClaude(options: ClaudeRunOptions): ClaudeRunHandle {
     });
 
     child.on("close", (code, signal) => {
+      if (killTimeout) {
+        clearTimeout(killTimeout);
+        killTimeout = undefined;
+      }
       resolveSessionId(undefined);
       if (cancelled || signal === "SIGTERM" || signal === "SIGKILL") {
         reject(new ClaudeRunError("Request cancelled", true, stderr));
@@ -172,13 +226,28 @@ export function runClaude(options: ClaudeRunOptions): ClaudeRunHandle {
   return {
     cancel(): void {
       cancelled = true;
-      if (child && !child.killed) {
-        child.kill("SIGTERM");
-        setTimeout(() => {
-          if (child && !child.killed) {
-            child.kill("SIGKILL");
+      if (child && !child.killed && child.pid) {
+        try {
+          child.kill("SIGTERM");
+          
+          // Set timeout for SIGKILL fallback
+          killTimeout = setTimeout(() => {
+            if (child && !child.killed && child.pid) {
+              try {
+                child.kill("SIGKILL");
+              } catch (err) {
+                // Process might already be dead
+              }
+            }
+            killTimeout = undefined;
+          }, 2000);
+        } catch (err) {
+          // Process might already be dead
+          if (killTimeout) {
+            clearTimeout(killTimeout);
+            killTimeout = undefined;
           }
-        }, 2000);
+        }
       }
     },
     result,

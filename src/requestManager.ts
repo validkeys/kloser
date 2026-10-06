@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import * as vscode from "vscode";
 import { ClaudeRunError, runClaude } from "./claudeRunner";
 import type { ClaudeRunHandle } from "./claudeRunner";
-import { buildChildEnv, getKloserConfig } from "./config";
+import { buildChildEnv, getKloserConfig, ConfigError } from "./config";
 import { DecorationManager } from "./decorationManager";
 import { buildRedirectPrompt, buildReplacementPrompt } from "./prompt";
 import { StreamApplier } from "./streamApplier";
@@ -28,10 +28,39 @@ export interface RequestManagerDeps {
   onActiveCountChanged: (count: number) => void;
 }
 
+/**
+ * Manages streaming code completion requests from Claude Code agent.
+ * 
+ * RequestManager handles the lifecycle of code completion requests:
+ * - Starting new completions with user instructions
+ * - Streaming incremental updates to the editor
+ * - Accepting or rejecting completions
+ * - Redirecting active completions with new instructions
+ * - Managing multiple concurrent requests
+ * 
+ * @example
+ * ```typescript
+ * const manager = new RequestManager({
+ *   decorations: decorationManager,
+ *   log: outputChannel,
+ *   onActiveCountChanged: (count) => updateStatusBar(count)
+ * });
+ * 
+ * // Start a completion
+ * manager.start(editor, range, "Add error handling");
+ * 
+ * // User accepts with Tab
+ * manager.accept();
+ * 
+ * // Or rejects with Esc
+ * manager.reject();
+ * ```
+ */
 export class RequestManager implements vscode.Disposable {
   private active?: ActiveStream;
   private readonly docListener: vscode.Disposable;
   private readonly handles = new Map<string, ClaudeRunHandle>();
+  private disposed = false;
 
   constructor(private readonly deps: RequestManagerDeps) {
     this.docListener = vscode.workspace.onDidChangeTextDocument((event) =>
@@ -39,22 +68,55 @@ export class RequestManager implements vscode.Disposable {
     );
   }
 
+  /**
+   * Returns true if there is currently an active streaming request.
+   */
   public get hasActiveStream(): boolean {
     return this.active !== undefined;
   }
 
+  /**
+   * Returns the instruction text of the currently active stream, if any.
+   */
   public get activeInstruction(): string | undefined {
     return this.active?.instruction;
   }
 
+  /**
+   * Starts a new code completion stream for the given editor selection.
+   * 
+   * @param editor - The text editor containing the code to modify
+   * @param range - The range of code to replace
+   * @param instruction - User's instruction describing what to do
+   * 
+   * @remarks
+   * If a stream is already active, shows a warning message.
+   * Configuration errors are caught and displayed to the user.
+   */
   public start(editor: vscode.TextEditor, range: vscode.Range, instruction: string): void {
+    if (this.disposed) {
+      this.deps.log.appendLine("[RequestManager] Cannot start: manager disposed");
+      return;
+    }
     if (this.active) {
       void vscode.window.showWarningMessage(
         "Kloser: a stream is already active — Tab to accept, Esc to reject, or run the command again to redirect it.",
       );
       return;
     }
-    const config = getKloserConfig();
+    
+    let config;
+    try {
+      config = getKloserConfig();
+    } catch (error) {
+      if (error instanceof ConfigError) {
+        this.deps.log.appendLine(`[Config] ${error.message}`);
+        void vscode.window.showErrorMessage(`Kloser configuration error: ${error.message}`);
+        return;
+      }
+      throw error;
+    }
+    
     const document = editor.document;
     const relativePath = vscode.workspace.asRelativePath(document.uri, false);
     const context = extractContext(document, range, config.contextLines);
@@ -89,7 +151,18 @@ export class RequestManager implements vscode.Disposable {
     this.dispatch(stream, prompt);
   }
 
+  /**
+   * Accepts the currently streaming or pending completion.
+   * 
+   * @remarks
+   * - If streaming: stops the stream and applies the current buffer
+   * - If pending: accepts the completed suggestion
+   * - If finalizing or redirecting: no-op
+   * 
+   * Typically triggered by the Tab key.
+   */
   public accept(): void {
+    if (this.disposed) return;
     const stream = this.active;
     if (!stream || stream.state === "finalizing" || stream.state === "redirecting") {
       return;
@@ -113,7 +186,17 @@ export class RequestManager implements vscode.Disposable {
     this.cleanup(stream);
   }
 
+  /**
+   * Rejects the currently streaming or pending completion.
+   * 
+   * @remarks
+   * Cancels the stream, restores the original text, and cleans up.
+   * If finalizing or redirecting: no-op
+   * 
+   * Typically triggered by the Escape key.
+   */
   public reject(): void {
+    if (this.disposed) return;
     const stream = this.active;
     if (!stream || stream.state === "finalizing" || stream.state === "redirecting") {
       return;
@@ -126,7 +209,18 @@ export class RequestManager implements vscode.Disposable {
     this.cleanup(stream);
   }
 
+  /**
+   * Redirects the active stream with a correction or clarification.
+   * 
+   * @param correction - Additional instruction to modify the agent's behavior
+   * 
+   * @remarks
+   * Requires a session ID to be available (after first tokens stream).
+   * Cancels the current stream and starts a new one with the correction.
+   * If no session or already finalizing: shows a warning.
+   */
   public redirect(correction: string): void {
+    if (this.disposed) return;
     const stream = this.active;
     if (!stream || stream.state === "finalizing" || stream.state === "redirecting") {
       return;
@@ -148,20 +242,52 @@ export class RequestManager implements vscode.Disposable {
     this.dispatch(stream, prompt, stream.sessionId);
   }
 
+  /**
+   * Stops all active requests immediately.
+   * 
+   * @remarks
+   * Cancels all Claude processes but does not trigger cleanup.
+   * Used by the "Stop All Requests" command.
+   */
   public stopAll(): void {
     for (const handle of this.handles.values()) {
       handle.cancel();
     }
   }
 
+  /**
+   * Returns the number of currently active handles (including background requests).
+   */
   public get activeCount(): number {
     return this.handles.size;
   }
 
+  /**
+   * Disposes the request manager and cleans up all resources.
+   * 
+   * @remarks
+   * - Stops all active requests
+   * - Disposes document listener
+   * - Clears context flag
+   * - Cleans up active streams
+   * - Idempotent: safe to call multiple times
+   */
   public dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    
     this.stopAll();
     this.docListener.dispose();
     void vscode.commands.executeCommand("setContext", "kloser.streamActive", false);
+    
+    // Clean up active stream
+    if (this.active) {
+      this.active.applier.dispose();
+      this.active = undefined;
+    }
+    
+    // Clear all handles
+    this.handles.clear();
   }
 
   private dispatch(stream: ActiveStream, prompt: string, resumeSessionId?: string): void {
@@ -186,11 +312,18 @@ export class RequestManager implements vscode.Disposable {
     this.handles.set(stream.id, handle);
     this.notifyActiveCountChanged();
 
-    void handle.sessionId.then((sessionId) => {
-      if (this.active === stream && sessionId) {
-        stream.sessionId = sessionId;
+    // Track session ID for redirects
+    void handle.sessionId.then(
+      (sessionId) => {
+        if (this.active === stream && sessionId) {
+          stream.sessionId = sessionId;
+        }
+      },
+      (error) => {
+        // Session ID resolution failed - log but don't fail the stream
+        this.deps.log.appendLine(`[${new Date().toISOString()}] stream ${stream.id} session ID error: ${error}`);
       }
-    });
+    );
 
     handle.result
       .then((final) => {
@@ -214,7 +347,12 @@ export class RequestManager implements vscode.Disposable {
   private completeStream(stream: ActiveStream, final: string): void {
     const text = stripCodeFences(final);
     if (!text) {
-      this.failStream(stream, new Error("the agent returned an empty response"));
+      this.failStream(stream, new Error("The agent returned an empty response"));
+      return;
+    }
+    // Additional validation: check for meaningful content
+    if (text.trim().length === 0) {
+      this.failStream(stream, new Error("The agent returned only whitespace"));
       return;
     }
     stream.state = "pending";

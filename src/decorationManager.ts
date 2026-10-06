@@ -25,6 +25,7 @@ export class DecorationManager implements vscode.Disposable {
   private readonly frameTypes: vscode.TextEditorDecorationType[];
   private readonly pendingType: vscode.TextEditorDecorationType;
   private spinnerTimer: NodeJS.Timeout | undefined;
+  private readonly lingerTimers = new Set<NodeJS.Timeout>();
 
   constructor(extensionPath: string) {
     const mediaUri = (name: string): vscode.Uri =>
@@ -77,12 +78,14 @@ export class DecorationManager implements vscode.Disposable {
     block.status = status;
     const range = block.range;
     const lingerMs = status === "done" ? DONE_LINGER_MS : ERROR_LINGER_MS;
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      this.lingerTimers.delete(timer);
       if (this.blocks.get(id)?.status === status) {
         this.blocks.delete(id);
         this.render();
       }
     }, lingerMs);
+    this.lingerTimers.add(timer);
     this.syncSpinnerTimer();
     this.render();
     return range;
@@ -106,10 +109,19 @@ export class DecorationManager implements vscode.Disposable {
   }
 
   public dispose(): void {
+    // Clear all linger timers
+    for (const timer of this.lingerTimers) {
+      clearTimeout(timer);
+    }
+    this.lingerTimers.clear();
+
+    // Clear spinner timer
     if (this.spinnerTimer) {
       clearInterval(this.spinnerTimer);
       this.spinnerTimer = undefined;
     }
+
+    // Dispose listeners and decoration types
     this.changeListener.dispose();
     for (const type of this.frameTypes) {
       type.dispose();

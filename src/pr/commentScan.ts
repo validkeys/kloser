@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { PrComment } from "../prompt";
+import { validateWorkspacePath, PRValidationError } from "./validation";
 
 const COMMENT_MARKER = /^\s*(?:\/\/|#|--|;|%|\/\*|\*|<!--) ?\? +(.+)$/;
 const COMMENT_CONTEXT_LINES = 3;
@@ -9,15 +10,36 @@ const MAX_SCAN_FILE_BYTES = 512_000;
 export async function scanMarkerComments(root: string, files: string[]): Promise<PrComment[]> {
   const comments: PrComment[] = [];
   for (const file of files) {
-    const absolute = path.join(root, file);
+    let absolute: string;
     let content: string;
     try {
+      // Validate path before accessing
+      absolute = validateWorkspacePath(root, file);
       const stat = await fs.stat(absolute);
       if (!stat.isFile() || stat.size > MAX_SCAN_FILE_BYTES) {
         continue;
       }
       content = await fs.readFile(absolute, "utf8");
-    } catch {
+    } catch (error) {
+      if (error instanceof PRValidationError) {
+        // Security issue - log and skip
+        console.error(`[CommentScan] Security: ${error.message}`);
+        continue;
+      }
+      // File not found or other expected errors
+      if (error && typeof error === "object" && "code" in error) {
+        if (error.code === "ENOENT") {
+          // Expected: file was deleted during PR review
+          continue;
+        }
+        if (error.code === "EACCES" || error.code === "EPERM") {
+          // Permission denied
+          console.warn(`[CommentScan] Permission denied: ${file}`);
+          continue;
+        }
+      }
+      // Unexpected error - log but continue
+      console.error(`[CommentScan] Error scanning ${file}:`, error);
       continue;
     }
     const lines = content.split("\n");

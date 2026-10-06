@@ -10,6 +10,7 @@ export class StreamApplier implements vscode.Disposable {
   private queue: Promise<void> = Promise.resolve();
   private range: vscode.Range;
   private timer: NodeJS.Timeout | undefined;
+  private disposed = false;
 
   constructor(
     private readonly uri: vscode.Uri,
@@ -21,6 +22,7 @@ export class StreamApplier implements vscode.Disposable {
   }
 
   public update(text: string): void {
+    if (this.disposed) return;
     this.pendingText = text;
     if (this.timer) {
       return;
@@ -32,23 +34,29 @@ export class StreamApplier implements vscode.Disposable {
   }
 
   public finalize(text: string): void {
+    if (this.disposed) return;
     this.cancelTimer();
     this.pendingText = undefined;
     this.enqueue(text, true);
   }
 
   public restore(): void {
+    if (this.disposed) return;
     this.cancelTimer();
     this.pendingText = undefined;
     this.enqueue(this.originalText, true);
   }
 
   public dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    
     this.cancelTimer();
     this.pendingText = undefined;
   }
 
   public adjustForChanges(event: vscode.TextDocumentChangeEvent): void {
+    if (this.disposed) return;
     for (const change of event.contentChanges) {
       if (this.isOwnChange(change)) {
         continue;

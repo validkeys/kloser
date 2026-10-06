@@ -166,7 +166,10 @@
     "check-types": "tsc --noEmit",
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
-    "package": "npm run check-types && node esbuild.js --production"
+    "package": "npm run check-types && node esbuild.js --production",
+    "test": "npm run check-types && tsx --test src/__tests__/**/*.test.ts",
+    "test:validation": "tsx --test src/__tests__/validation.test.ts",
+    "test:state": "tsx --test src/__tests__/streamState.test.ts"
   },
   "dependencies": {
     "marked": "^14.1.3"
@@ -175,6 +178,7 @@
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.24.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.5.0"
   }
 }

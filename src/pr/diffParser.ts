@@ -6,6 +6,13 @@ export interface FileDiff {
   previousPath?: string;
 }
 
+/**
+ * Safely extracts a regex match group, returning empty string if not found.
+ */
+function getMatchGroup(match: RegExpExecArray | null, index: number): string {
+  return match?.[index] ?? "";
+}
+
 export function parseUnifiedDiff(diff: string): FileDiff[] {
   const files: FileDiff[] = [];
   let current: FileDiff | undefined;
@@ -35,12 +42,12 @@ export function parseUnifiedDiff(diff: string): FileDiff[] {
     }
     const renameFrom = /^rename from (.+)$/.exec(line);
     if (renameFrom) {
-      pendingRenameFrom = renameFrom[1];
+      pendingRenameFrom = getMatchGroup(renameFrom, 1);
       continue;
     }
     const minusPath = /^--- a\/(.+)$/.exec(line);
     if (minusPath) {
-      pendingMinusPath = minusPath[1];
+      pendingMinusPath = getMatchGroup(minusPath, 1);
       continue;
     }
     if (line.startsWith("+++ /dev/null")) {
@@ -60,7 +67,7 @@ export function parseUnifiedDiff(diff: string): FileDiff[] {
         addedLines: [],
         isAdded: pendingAdded,
         isDeleted: false,
-        path: plusPath[1],
+        path: getMatchGroup(plusPath, 1),
         previousPath: pendingRenameFrom,
       };
       files.push(current);
@@ -74,7 +81,12 @@ export function parseUnifiedDiff(diff: string): FileDiff[] {
     }
     const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
     if (hunk) {
-      headLine = Number(hunk[1]) - 1;
+      const lineNumStr = getMatchGroup(hunk, 1);
+      headLine = Number(lineNumStr) - 1;
+      // Validate parsed number
+      if (!Number.isFinite(headLine) || headLine < 0) {
+        headLine = 0;
+      }
       continue;
     }
     if (line.startsWith("+")) {

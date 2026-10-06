@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { validateWorkspacePath, PRValidationError } from "./validation";
 
 export interface PendingApply {
   code: string;
@@ -27,8 +28,10 @@ export async function applyCodeAtTarget(
   target: PendingApply,
   code: string,
 ): Promise<{ detail: string; ok: boolean }> {
-  const uri = vscode.Uri.file(path.join(root, target.file));
   try {
+    // Validate path to prevent traversal
+    const safePath = validateWorkspacePath(root, target.file);
+    const uri = vscode.Uri.file(safePath);
     const document = await vscode.workspace.openTextDocument(uri);
     const startLine = Math.max(1, target.startLine);
     const endLine = Math.min(document.lineCount, Math.max(startLine, target.endLine));
@@ -48,6 +51,9 @@ export async function applyCodeAtTarget(
       ? { detail: `applied fix to ${target.file}:${startLine}-${endLine}`, ok: true }
       : { detail: `could not apply the fix to ${target.file}`, ok: false };
   } catch (error) {
+    if (error instanceof PRValidationError) {
+      return { detail: `Security: ${error.message}`, ok: false };
+    }
     return { detail: error instanceof Error ? error.message : String(error), ok: false };
   }
 }

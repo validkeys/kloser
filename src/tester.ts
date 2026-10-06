@@ -12,7 +12,7 @@ export const TestService: ITestService = {
      * @returns The sum of x and y.
      * @throws {RangeError} If y is a string that cannot be parsed as a finite number.
      */
-    add(x, y) {
+    add(x: number, y: number | string): number {
         const n = typeof y === "string" ? parseFloat(y) : y;
         if (!isFinite(n)) throw new RangeError(`add: cannot convert "${y}" to a finite number`);
         return x + n;
@@ -24,6 +24,6 @@ export const TestService: ITestService = {
      * @param y - The subtrahend.
      * @returns The difference of x and y.
      */
-    subtract(x, y) { return x - y; },
+    subtract(x: number, y: number): number { return x - y; },
 
 }
